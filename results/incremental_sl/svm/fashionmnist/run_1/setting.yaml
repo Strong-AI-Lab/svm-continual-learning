@@ -1,0 +1,64 @@
+_current_task_id: 9
+batch_size: 32
+class_order:
+- 0
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+- 7
+- 8
+- 9
+config:
+  data_dir: data
+  debug: true
+  device: cuda:0
+  log_dir: results
+  num_workers: null
+  render: false
+  seed: null
+  verbose: false
+dataset: fashionmnist
+drop_last: false
+increment: 1
+initial_increment: 0
+known_task_boundaries_at_test_time: true
+known_task_boundaries_at_train_time: true
+monitor_training_performance: false
+nb_tasks: 10
+num_workers: 4
+shared_action_space: null
+smooth_task_boundaries: false
+stationary_context: false
+task_labels_at_test_time: false
+task_labels_at_train_time: true
+test_class_order:
+- 0
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+- 7
+- 8
+- 9
+test_increment: 1
+test_initial_increment: 0
+test_transforms:
+- to_tensor
+- three_channels
+train_transforms:
+- to_tensor
+- three_channels
+transforms:
+- to_tensor
+- three_channels
+- channels_first_if_needed
+val_fraction: 0.2
+val_transforms:
+- to_tensor
+- three_channels
+wandb: null
