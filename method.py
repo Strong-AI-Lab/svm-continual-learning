@@ -23,7 +23,7 @@ from sequoia.settings.sl.incremental.objects import (
 from sequoia.settings.sl.incremental.results import Results
 from sequoia.settings.sl.environment import PassiveEnvironment
 
-from replay import *
+from replay.buffer import *
 from models.model import *
 
 from collections import deque
@@ -38,13 +38,15 @@ class GenericMethod(Method, target_setting=IncrementalSLSetting):
         # Learning rate of the optimizer.
         learning_rate: float = 0.001
 
-    def __init__(self, model: ClassificationModel, n_epochs: int = 1, hparams: HParams = None):
+    def __init__(self, model: ClassificationModel, description: str = "Generic method", n_epochs: int = 1, hparams: HParams = None):
         self.hparams: GenericMethod.HParams = hparams or self.HParams()
         self.n_epochs: int = n_epochs
         self.early_stop_patience: int = 2
 
         self.model = model
         self.optimizer: torch.optim.Optimizer
+
+        self.description = description
 
     def configure(self, setting: IncrementalSLSetting):
         """ 

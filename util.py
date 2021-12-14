@@ -2,6 +2,8 @@ from torch import nn
 from copy import deepcopy
 import numpy as np
 
+from method import GenericMethod
+
 from sequoia.settings.sl.incremental.results import Results
 
 def copy_module_list(module_list: nn.ModuleList):
@@ -14,11 +16,11 @@ def copy_module_list(module_list: nn.ModuleList):
 
     return new_copy
 
-def print_method_results(results: Results, method_str: str):
+def print_method_results(results: Results, method: GenericMethod):
     # Prints accuracy results of running method in a readable format
     #  - method_str: a str describing the nature of the method
 
-    print(f'\n{method_str} results (final):')
+    print(f'\n"{method.description}" results (final):')
     for i, metric in enumerate(results.final_performance_metrics):
         print(f' - Task {i} accuracy across {metric.n_samples} samples: {metric.accuracy}')
     print(f' - Average accuracy: {np.mean([metric.accuracy for metric in results.final_performance_metrics])}')
