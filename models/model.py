@@ -74,8 +74,20 @@ class ClassificationModel(nn.Module):
 
         loss, batch_losses = self.batch_loss_fn(y_targets, y_pred)
 
-        context = SharedStepContext(-1, x, y_targets, y_pred, batch_losses, loss)
-        self.replay_buffer.add_examples(context)
+
+        splitting_i = None  # None defaults to no splitting as x[:None] becomes x[:]
+        if len(replay_examples) != 0:
+            splitting_i = len(x) - len(replay_examples)
+
+        # add new examples to replay buffer
+        # TODO: should we calculate separate combined loss for replay / new examples?
+        new_examples_context = SharedStepContext(-1, x[:splitting_i], y_targets[:splitting_i], y_pred[:splitting_i], batch_losses[:splitting_i], loss) 
+        self.replay_buffer.add_examples(new_examples_context)
+
+        if splitting_i is not None:
+            # update examples that were pulled from the replay buffer
+            replay_examples_context = SharedStepContext(-1, x[splitting_i:], y_targets[splitting_i:], y_pred[splitting_i:], batch_losses[splitting_i:], loss)
+            self.replay_buffer.update_examples(replay_examples, replay_examples_context)
 
         return loss, metrics_dict
 

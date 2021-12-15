@@ -4,6 +4,7 @@
 from abc import abstractmethod
 from typing import Collection, Dict, List, Tuple, Type, Optional, Union
 from random import sample
+from copy import deepcopy
 
 from .heuristic import Heuristic
 from .context import SharedStepContext
@@ -11,32 +12,26 @@ from .context import SharedStepContext
 import numpy as np
 
 class ReplayExample():
-    def __init__(self, x, y, heuristics: List[Heuristic]):
+    def __init__(self, x, y, heuristic: Heuristic):
         self.x = x
         self.y = y
 
-        self.heuristics_val = 0  # last calculated value of combined heuristic
-        self.heuristics = heuristics   # list of the heuristic objects for this example\
+        self.heuristic = heuristic   # heursitic object defining the heuristic for this replay example
 
-    def update_heuristics(self, context: SharedStepContext, **kwargs):
-        for heuristic in self.heuristics:
-            heuristic.calculate(context)  # TODO: pass on kwargs
-
-        # for now just add heuristics together
-        # TODO: enable other means of combination
-        self.heuristics_val = np.mean([heuristic.val for heuristic in self.heuristics])
+    def update_heuristic(self, context: SharedStepContext, **kwargs):
+        self.heuristic.calculate(context)  # TODO: pass on kwargs
 
 class AbstractReplayBuffer():
 
-    def __init__(self, heuristic_classes: List[Type[Heuristic]]):
+    def __init__(self, heuristic_template: Heuristic):
         self.buffer: Collection
-        # heuristics is a list of Heuristic derivative classes which are used to instantiate
-        # heuristic objects for new replay examples
-        self.heuristic_classes = heuristic_classes
+        # heuristics_template is effectively just an instantiated instance of the heuristic type to be used
+        # for the replay examples in this bufffer. it is simply used to create copies of it for newly created examples
+        self.heuristic_template = heuristic_template
 
     @abstractmethod
-    def _add_examples(self, example: ReplayExample):
-        # How an individual example is added will depend upon the buffer container used (e.g. heap, list, etc.)
+    def _add_examples(self, examples: List[ReplayExample]):
+        # How the examples are added will depend upon the buffer container used (e.g. heap, list, etc.)
         #  - Also, some methods may want to add a 'cut-off' heuristic score or something similar to filter replay examples
         raise NotImplementedError
     
@@ -47,13 +42,20 @@ class AbstractReplayBuffer():
         for i, x_example in enumerate(context.x):
 
             context.ex_i = i
-            heuristics = [heuristic_class() for heuristic_class in self.heuristic_classes]
+            heuristic = deepcopy(self.heuristic_template)
 
-            example = ReplayExample(x_example, context.y_targets[i], heuristics)
-            example.update_heuristics(context)
+            example = ReplayExample(x_example, context.y_targets[i], heuristic)
+            example.update_heuristic(context)
             new_examples.append(example)
         
         self._add_examples(new_examples)
+
+    def update_examples(self, examples: List[ReplayExample], replay_context: SharedStepContext):
+        # Updates the passed ReplayExample instances heuristics
+        #  - Assumes that examples and replay_context are ordered in the same fashion (i.e. examples[i] corresponds to replay_context.x[i], e.g.)
+        for i, example in enumerate(examples):
+            replay_context.ex_i = i
+            example.update_heuristic(replay_context)
 
     @abstractmethod
     def get_examples(self, num_examples: int, random: bool = True):
@@ -64,7 +66,7 @@ class NonFunctionalReplayBuffer(AbstractReplayBuffer):
     # "Implementation" of replay buffer that does not do anything
 
     def __init__(self):
-        super().__init__([])
+        super().__init__(None)
 
     def add_examples(self, examples: List[ReplayExample]):
         pass
@@ -78,8 +80,8 @@ class HeuristicSortedReplayBuffer(AbstractReplayBuffer):
     #  - Replay examples that have higher / lower heuristic (depending on if reverse sort or not)
     #    will be in memory for more time, thus they will influence model dynamics more.
 
-    def __init__(self, heuristics: List[Type[Heuristic]], max_buffer_size: int = 5_000, reverse_sort: bool = False):
-        super().__init__(heuristics)
+    def __init__(self, heuristic_template: Heuristic, max_buffer_size: int = 1_000, reverse_sort: bool = False):
+        super().__init__(heuristic_template)
 
         self.buffer = list()
         self.max_buffer_size = max_buffer_size
@@ -99,7 +101,7 @@ class HeuristicSortedReplayBuffer(AbstractReplayBuffer):
         # add examples to buffer and sort based on heuristic
         # remove examples at bottom of list if list exceeds maximum size
         self.buffer.extend(examples)
-        self.buffer.sort(key = lambda ex: ex.heuristics_val, reverse = self.reverse_sort)
+        self.buffer.sort(key = lambda ex: ex.heuristic.val, reverse = self.reverse_sort)
         
         if len(self.buffer) > self.max_buffer_size:
             self.buffer = self.buffer[-self.max_buffer_size:]  # remove examples with smallest / largest heursitic (depending on if sort is reversed)

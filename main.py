@@ -24,7 +24,7 @@ from sequoia.settings.sl.incremental.results import Results
 from sequoia.settings.sl.environment import PassiveEnvironment
 
 from replay.buffer import HeuristicSortedReplayBuffer, NonFunctionalReplayBuffer
-from replay.heuristic import LossHeuristic, SVMBoundaryHeuristic
+from replay.heuristic import LossHeuristic, SVMBoundaryHeuristic, SummingHeuristic
 from models.model import SoftmaxClassificationModel, SVMClassificationModel
 from models.mnist import BasicMNISTNetwork
 from method import GenericMethod
@@ -65,7 +65,7 @@ def main():
     ce_loss_method = GenericMethod(
         SoftmaxClassificationModel(
             copy_module_list(mnist_network),
-            HeuristicSortedReplayBuffer([LossHeuristic])
+            HeuristicSortedReplayBuffer(LossHeuristic())
         ),
         "Fixed length, CE loss ordered replay method",
         n_epochs = n_epochs
@@ -74,7 +74,7 @@ def main():
     svm_loss_method = GenericMethod(
         SVMClassificationModel(
             copy_module_list(mnist_network),
-            HeuristicSortedReplayBuffer([LossHeuristic])
+            HeuristicSortedReplayBuffer(LossHeuristic())
         ),
         "Fixed length, SVM loss ordered replay method",
         n_epochs = n_epochs
@@ -83,7 +83,7 @@ def main():
     svm_boundary_method = GenericMethod(
         SVMClassificationModel(
             copy_module_list(mnist_network),
-            HeuristicSortedReplayBuffer([SVMBoundaryHeuristic], reverse_sort=True)  # smaller boundary distances are prioritised
+            HeuristicSortedReplayBuffer(SVMBoundaryHeuristic(), reverse_sort=True)  # smaller boundary distances are prioritised
         ),
         "Fixed length, SVM boundary proximity ordered (reverse) replay method",
         n_epochs = n_epochs
@@ -92,19 +92,28 @@ def main():
     reverse_svm_boundary_method = GenericMethod(
         SVMClassificationModel(
             copy_module_list(mnist_network),
-            HeuristicSortedReplayBuffer([SVMBoundaryHeuristic], reverse_sort=False)  # larger boundary distances are prioritised
+            HeuristicSortedReplayBuffer(SVMBoundaryHeuristic(), reverse_sort=False)  # larger boundary distances are prioritised
         ),
         "Fixed length, SVM boundary proximity ordered replay method",
         n_epochs = n_epochs
     )
 
     # combines svm loss and boundary proximity metrics
-    hybrid_svm_method = GenericMethod(  
+    hybrid_svm_method = GenericMethod(
         SVMClassificationModel(
             copy_module_list(mnist_network),
-            HeuristicSortedReplayBuffer([SVMBoundaryHeuristic, LossHeuristic], reverse_sort=False)
+            HeuristicSortedReplayBuffer(SummingHeuristic([SVMBoundaryHeuristic(), LossHeuristic()]), reverse_sort=False)
         ),
-        "Fixed length, SVM boundary proximity ordered replay method",
+        "Fixed length, SVM hybrid (boundary proxim. & loss) ordered replay method",
+        n_epochs = n_epochs
+    )
+
+    reverse_hybrid_svm_method = GenericMethod(  
+        SVMClassificationModel(
+            copy_module_list(mnist_network),
+            HeuristicSortedReplayBuffer(SummingHeuristic([SVMBoundaryHeuristic(), LossHeuristic()]), reverse_sort=False)
+        ),
+        "Fixed length, SVM hybrid (boundary proxim. & loss) ordered (reverse) replay method",
         n_epochs = n_epochs
     )
 
@@ -126,12 +135,16 @@ def main():
     svm_loss_results = cl_setting.apply(svm_loss_method, config=config)
     svm_boundary_results = cl_setting.apply(svm_boundary_method, config=config)
     reverse_svm_boundary_results = cl_setting.apply(reverse_svm_boundary_method, config=config)
+    hybrid_svm_results = cl_setting.apply(hybrid_svm_method, config=config)
+    reverse_hybrid_svm_results = cl_setting.apply(reverse_hybrid_svm_method, config=config)
     trad_results = trad_setting.apply(trad_method, config=config)
 
     print_method_results(ce_loss_results, ce_loss_method)
     print_method_results(svm_loss_results, svm_loss_method)
     print_method_results(svm_boundary_results, svm_boundary_method)
     print_method_results(reverse_svm_boundary_results, reverse_svm_boundary_method)
+    print_method_results(hybrid_svm_results, hybrid_svm_method)
+    print_method_results(reverse_hybrid_svm_results, reverse_hybrid_svm_method)
     print_method_results(trad_results, trad_method)
 
 if __name__ == "__main__":
