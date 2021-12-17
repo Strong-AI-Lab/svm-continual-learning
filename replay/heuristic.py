@@ -30,11 +30,11 @@ class SVMBoundaryHeuristic():
 
     def calculate(self, context: SharedStepContext, **kwargs):
         i = context.ex_i
-        self.val = 1 / abs(1 - context.y_pred[i][context.y_targets[i]].cpu().item())
+        self.val = abs(1 - context.y_pred[i][context.y_targets[i]].cpu().item())
 
 class CompoundHeuristic(Heuristic):
 
-    # Heuristic type that combines several different heuristic values together in some fashion (e.g. adding, multiplying, etc.)
+    # Heuristic type that combines one or more heuristic values together in some fashion (e.g. adding, multiplying, etc.)
 
     def __init__(self, children: List[Heuristic]):
         super().__init__()
@@ -50,7 +50,15 @@ class CompoundHeuristic(Heuristic):
         # Abstract method that should describe a way of combining the children heuristic values
         raise NotImplementedError()
 
-class SummingHeuristic(CompoundHeuristic):
+class ModifierHeuristic(CompoundHeuristic):
+
+    # Specific case of CompoundHeuristic where there should only ever be a single child heuristic
+
+    def __init__(self, child: Heuristic):
+        super().__init__([child])
+        self.child = child
+
+class WeightedSummationHeuristic(CompoundHeuristic):
 
     def __init__(self, children: List[Heuristic], coeffs: List[float] = []):
         # coefffs is a list of float coefficients that each child heuristic value is multiplied by (pairwise)
@@ -60,3 +68,25 @@ class SummingHeuristic(CompoundHeuristic):
 
     def _combine(self):
         self.val = np.sum([child_h.val * self.coeffs[i] for i, child_h in enumerate(self.children)])
+
+class InversionHeuristic(ModifierHeuristic):
+
+    # Calculates the inverse of the child heuristic
+    def _combine(self):
+        self.val = 1 / self.child.val
+
+class ExponentiationHeuristic(ModifierHeuristic):
+
+    def __init__(self, child: Heuristic, n: int):
+        super().__init__(child)
+        self.n = n  # power to raise heuristic value to
+
+    def _combine(self):
+        self.val = pow(self.child.val, self.n)
+
+class SquaringHeuristic(ExponentiationHeuristic):
+
+    # Special, common case of Exponentation heuristic where n is 2
+
+    def __init__(self, child: Heuristic):
+        super().__init__(child, 2)

@@ -1,21 +1,24 @@
-
-#import torch
+from __future__ import annotations
 
 from abc import abstractmethod
 from typing import Collection, Dict, List, Tuple, Type, Optional, Union
 from random import sample
 from copy import deepcopy
+from collections import defaultdict
 
 from .heuristic import Heuristic
 from .context import SharedStepContext
 
 import numpy as np
+import torch
 
 class ReplayExample():
-    def __init__(self, x, y, heuristic: Heuristic):
+    def __init__(self, x, y, heuristic: Heuristic, buffer):
         self.x = x
         self.y = y
 
+        self.buffer: AbstractReplayBuffer = buffer  # buffer that contains this replay example
+                                                    # (can't type argument due to AbstractReplayBuffer having not been defined yet)
         self.heuristic = heuristic   # heursitic object defining the heuristic for this replay example
 
     def update_heuristic(self, context: SharedStepContext, **kwargs):
@@ -23,11 +26,14 @@ class ReplayExample():
 
 class AbstractReplayBuffer():
 
-    def __init__(self, heuristic_template: Heuristic):
-        self.buffer: Collection
+    def __init__(self, heuristic_template: Heuristic, trackers: List[AbstractReplayTracker] = []):
+
         # heuristics_template is effectively just an instantiated instance of the heuristic type to be used
         # for the replay examples in this bufffer. it is simply used to create copies of it for newly created examples
         self.heuristic_template = heuristic_template
+
+        self.buffer: Collection
+        self.trackers = trackers
 
     @abstractmethod
     def _add_examples(self, examples: List[ReplayExample]):
@@ -36,6 +42,8 @@ class AbstractReplayBuffer():
         raise NotImplementedError
     
     def add_examples(self, context: SharedStepContext):
+
+        # 'context' should only contain data relating to the datapoints which are to be added to replay memory
         
         new_examples = []
 
@@ -44,11 +52,13 @@ class AbstractReplayBuffer():
             context.ex_i = i
             heuristic = deepcopy(self.heuristic_template)
 
-            example = ReplayExample(x_example, context.y_targets[i], heuristic)
+            example = ReplayExample(x_example, context.y_targets[i], heuristic, self)
             example.update_heuristic(context)
             new_examples.append(example)
         
         self._add_examples(new_examples)
+        for tracker in self.trackers:
+            tracker.post_add_examples(new_examples, context)
 
     def update_examples(self, examples: List[ReplayExample], replay_context: SharedStepContext):
         # Updates the passed ReplayExample instances heuristics
@@ -80,8 +90,8 @@ class HeuristicSortedReplayBuffer(AbstractReplayBuffer):
     #  - Replay examples that have higher / lower heuristic (depending on if reverse sort or not)
     #    will be in memory for more time, thus they will influence model dynamics more.
 
-    def __init__(self, heuristic_template: Heuristic, max_buffer_size: int = 1_000, reverse_sort: bool = False):
-        super().__init__(heuristic_template)
+    def __init__(self, heuristic_template: Heuristic, trackers: List[AbstractReplayTracker] = [], max_buffer_size: int = 1_000, reverse_sort: bool = False):
+        super().__init__(heuristic_template, trackers)
 
         self.buffer = list()
         self.max_buffer_size = max_buffer_size
@@ -105,3 +115,47 @@ class HeuristicSortedReplayBuffer(AbstractReplayBuffer):
         
         if len(self.buffer) > self.max_buffer_size:
             self.buffer = self.buffer[-self.max_buffer_size:]  # remove examples with smallest / largest heursitic (depending on if sort is reversed)
+
+
+## TRACKERS
+
+class AbstractReplayTracker():
+
+    # Class used for tracking replay buffer characteristics
+    #  - could range from tracking class distributions, to average heuristic values, etc.
+    
+    def __init__(self, buffer: AbstractReplayBuffer):
+        self.buffer = buffer  # Buffer that we are tracking
+
+    def post_add_examples(self, examples: List[ReplayExample], context: SharedStepContext):
+        # Hook that is called by the replay buffer class when examples have been added to the buffer
+        pass
+
+    def post_get_examples(self, examples: List[ReplayExample], context: SharedStepContext):
+        # Hook that is called by the replay buffer class when examples have been retrieved from the buffer
+        # NOTE: currently not implemented on the buffer side of things... not sure if this really has a use case TBH
+        pass
+
+class ClassDistributionTracker():
+
+    # Tracker used to track the distribution of classes within the replay buffer
+    #  - assumes no prior knowledge of the output domain (i.e., class is not included in counts until it is first encountered in data)
+
+    def __init__(self, buffer: AbstractReplayBuffer, onehot: bool = False):
+        super().__init__(buffer)
+
+        self.class_counts = defaultdict(lambda: 0)
+        self.onehot = onehot  # whether the target outputs are defined as one-hot vector encodings or not (class ID)
+
+    def post_add_examples(self, examples: List[ReplayExample], context: SharedStepContext):
+
+        for example in examples:
+            try:
+                y = torch.nonzero(example.y).item() if self.onehot else example.y
+            except ValueError as e:
+                raise ValueError('Output targets were specified as one-hot vector encodings, yet more than one index is non-zero') from e
+
+            self.class_counts[y] += 1
+
+    def get_distribution(self):
+        return self.class_counts

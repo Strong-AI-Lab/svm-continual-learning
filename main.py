@@ -24,7 +24,7 @@ from sequoia.settings.sl.incremental.results import Results
 from sequoia.settings.sl.environment import PassiveEnvironment
 
 from replay.buffer import HeuristicSortedReplayBuffer, NonFunctionalReplayBuffer
-from replay.heuristic import LossHeuristic, SVMBoundaryHeuristic, SummingHeuristic
+from replay.heuristic import InversionHeuristic, LossHeuristic, SVMBoundaryHeuristic, WeightedSummationHeuristic
 from models.model import SoftmaxClassificationModel, SVMClassificationModel
 from models.mnist import BasicMNISTNetwork
 from method import GenericMethod
@@ -43,24 +43,6 @@ def main():
 
     mnist_network = BasicMNISTNetwork(cl_setting.observation_space['x'].shape[0], cl_setting.action_space.n)
     n_epochs = 1
-
-    # no_replay_method = GenericMethod(
-    #     SoftmaxClassificationModel(
-    #         copy_module_list(mnist_network),
-    #         NonFunctionalReplayBuffer()
-    #     ),
-    #     "No replay method",
-    #     n_epochs = n_epochs
-    # )
-
-    # fixed_replay_method = GenericMethod(
-    #     SoftmaxClassificationModel(
-    #         copy_module_list(mnist_network),
-    #         FixedLengthReplayBuffer()
-    #     ),
-    #     "Fixed length, chronologically ordered replay method",
-    #     n_epochs = n_epochs
-    # )
 
     ce_loss_method = GenericMethod(
         SoftmaxClassificationModel(
@@ -83,7 +65,7 @@ def main():
     svm_boundary_method = GenericMethod(
         SVMClassificationModel(
             copy_module_list(mnist_network),
-            HeuristicSortedReplayBuffer(SVMBoundaryHeuristic(), reverse_sort=True)  # smaller boundary distances are prioritised
+            HeuristicSortedReplayBuffer(InversionHeuristic(SVMBoundaryHeuristic()))  # smaller boundary distances are prioritised
         ),
         "Fixed length, SVM boundary proximity ordered (reverse) replay method",
         n_epochs = n_epochs
@@ -92,7 +74,7 @@ def main():
     reverse_svm_boundary_method = GenericMethod(
         SVMClassificationModel(
             copy_module_list(mnist_network),
-            HeuristicSortedReplayBuffer(SVMBoundaryHeuristic(), reverse_sort=False)  # larger boundary distances are prioritised
+            HeuristicSortedReplayBuffer(SVMBoundaryHeuristic())  # larger boundary distances are prioritised
         ),
         "Fixed length, SVM boundary proximity ordered replay method",
         n_epochs = n_epochs
@@ -102,7 +84,7 @@ def main():
     hybrid_svm_method = GenericMethod(
         SVMClassificationModel(
             copy_module_list(mnist_network),
-            HeuristicSortedReplayBuffer(SummingHeuristic([SVMBoundaryHeuristic(), LossHeuristic()]), reverse_sort=False)
+            HeuristicSortedReplayBuffer(WeightedSummationHeuristic([SVMBoundaryHeuristic(), LossHeuristic()]))
         ),
         "Fixed length, SVM hybrid (boundary proxim. & loss) ordered replay method",
         n_epochs = n_epochs
@@ -111,7 +93,7 @@ def main():
     reverse_hybrid_svm_method = GenericMethod(  
         SVMClassificationModel(
             copy_module_list(mnist_network),
-            HeuristicSortedReplayBuffer(SummingHeuristic([SVMBoundaryHeuristic(), LossHeuristic()]), reverse_sort=False)
+            HeuristicSortedReplayBuffer(WeightedSummationHeuristic([InversionHeuristic(SVMBoundaryHeuristic()), LossHeuristic()]))
         ),
         "Fixed length, SVM hybrid (boundary proxim. & loss) ordered (reverse) replay method",
         n_epochs = n_epochs
