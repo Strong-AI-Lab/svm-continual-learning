@@ -1,7 +1,7 @@
 
 from abc import abstractmethod
 import re
-from typing import Dict, List, Tuple, Type, Optional, Union
+from typing import Dict, List, Tuple, Type, Optional, Union, TYPE_CHECKING
 
 import gym
 import torch
@@ -16,10 +16,8 @@ from sequoia.settings.sl.incremental.objects import (
     Rewards,
 )
 
-from copy import deepcopy
-
-from replay.context import SharedStepContext
-from replay.buffer import AbstractReplayBuffer
+from svm.replay.context import SharedStepContext
+from svm.replay.buffer.base import AbstractReplayBuffer    
 
 class ClassificationModel(nn.Module):
 

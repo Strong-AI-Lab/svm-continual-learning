@@ -2,7 +2,7 @@ from torch import nn
 from copy import deepcopy
 import numpy as np
 
-from method import GenericMethod
+from svm.method.method import GenericMethod
 
 from sequoia.settings.sl.incremental.results import Results
 

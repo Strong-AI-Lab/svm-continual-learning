@@ -23,8 +23,7 @@ from sequoia.settings.sl.incremental.objects import (
 from sequoia.settings.sl.incremental.results import Results
 from sequoia.settings.sl.environment import PassiveEnvironment
 
-from replay.buffer import *
-from models.model import *
+from svm.models.model import ClassificationModel
 
 from collections import deque
 from random import sample
