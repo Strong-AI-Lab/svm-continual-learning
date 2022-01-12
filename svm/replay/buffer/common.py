@@ -62,3 +62,51 @@ class HeuristicSortedReplayBuffer(AbstractReplayBuffer):
             examples_to_remove = self.buffer[:len(self.buffer) - self.max_buffer_size]
             self.buffer = self.buffer[-self.max_buffer_size:]  # remove examples with smallest / largest heursitic (depending on if sort is reversed)
             self._post_clean_buffer(examples_to_remove)
+
+class ClassSeparatedHeuristicReplayBuffer(AbstractReplayBuffer):
+
+    # Same idea as HeuristicSortedReplayBuffer except we keep a fixed number of examples
+    # for each (target) class
+    # TODO: refactor replay buffer code so this and HeuristicSortedReplayBuffer can share code
+
+    def __init__(self, heuristic_template: Heuristic, trackers: List[AbstractReplayTracker] = [], class_buffer_size=100, reverse_sort: bool = False):
+        super().__init__(heuristic_template, trackers)
+
+        self.buffer: Dict[int, List[ReplayExample]] = defaultdict(lambda: [])
+        self.class_buffer_size = class_buffer_size  # number of each class to store
+        self.reverse_sort = reverse_sort
+
+    def get_examples(self, num_examples: int):
+
+        buffer_size = sum([len(class_buffer) for class_buffer in self.buffer.values()])
+
+        if num_examples > buffer_size:
+            return []
+
+        class_ids = list(self.buffer.keys())
+        sample_class_ids = np.random.choice(class_ids, num_examples)
+
+        ret_examples = []
+        for class_id in sample_class_ids:
+            ret_examples.append(np.random.choice(self.buffer[class_id]))
+
+        return ret_examples
+
+    def _add_examples(self, examples: List[ReplayExample]):
+        # add examples to buffer and sort based on heuristic
+        # remove examples at bottom of list if list exceeds maximum size
+        for example in examples:
+            self.buffer[example.y.cpu().item()].append(example)
+
+        for class_id in self.buffer.keys():
+            class_buffer = self.buffer[class_id]
+            class_buffer.sort(key = lambda ex: ex.heuristic.val, reverse = self.reverse_sort)
+
+            if len(class_buffer) > self.class_buffer_size:
+                examples_to_remove = class_buffer[:len(class_buffer) - self.class_buffer_size]
+                self.buffer[class_id] = class_buffer[-self.class_buffer_size:]  # remove examples with smallest / largest heursitic (depending on if sort is reversed)
+                self._post_clean_buffer(examples_to_remove)
+        
+            
+
+

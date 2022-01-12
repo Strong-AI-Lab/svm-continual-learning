@@ -35,7 +35,7 @@ from random import sample
 def main():
 
     ## 1. Creating the settings:
-    cl_setting = ClassIncrementalSetting(dataset="fashionmnist", batch_size=32, nb_tasks=5)
+    cl_setting = ClassIncrementalSetting(dataset="fashionmnist", batch_size=32, nb_tasks=10)
     trad_setting = ClassIncrementalSetting(dataset="fashionmnist", batch_size=32, nb_tasks=1)  #  setting that mimics iid SL
 
     ## 2. Creating the Methods
@@ -126,14 +126,14 @@ def main():
     )
 
     cl_methods = [
-        ce_loss_method,
-        svm_loss_method,
-        svm_boundary_method,
+        # ce_loss_method,
+        # svm_loss_method,
+        # svm_boundary_method,
         svm_boundary_class_eq_method,
         svm_boundary_class_eq_sqrd_method,
-        reverse_svm_boundary_method,
-        hybrid_svm_method,
-        reverse_hybrid_svm_method
+        # reverse_svm_boundary_method,
+        # hybrid_svm_method,
+        # reverse_hybrid_svm_method
     ]
     config = Config(debug=False, render=False, device="cuda:0")
 

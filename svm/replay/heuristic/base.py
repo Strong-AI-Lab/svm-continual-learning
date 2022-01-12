@@ -11,9 +11,12 @@ class Heuristic():
 
     # Class that represents a calculable heuristic for prioritised replay
 
-    def __init__(self):
+    def __init__(self, should_update: bool=True):
         self.buffer = None
         self.val = 0
+
+        self.should_update = should_update  # whether or not this heuristic value should ever update after the first calculation
+        self.has_calculated = False  # whether the value for this heuristic has been calculated yet (used when should_update is False)
 
     def attach(self, buffer: AbstractReplayBuffer):
         # registers a buffer as this heuristic's container
@@ -21,8 +24,16 @@ class Heuristic():
 
     @abstractmethod
     def calculate(self, context: SharedStepContext, **kwargs):
+        if not self.should_update and self.has_calculated:  # skip updating / calculating if specified
+            return
+        
+        self._calculate(context)
+        self.has_calculated = True
+
+    @abstractmethod
+    def _calculate(self, context: SharedStepContext, **kwargs) -> float:
         # Calculates and updates the heuristic for the associated replay example
-        raise NotImplementedError()
+        return 0
 
     def copy(self, *args, **kwargs) -> 'Heuristic':
         # NOTE: this copy stuff could be a source of error, so this might need looking over at some point
@@ -35,8 +46,8 @@ class CompoundHeuristic(Heuristic):
 
     # Heuristic type that combines one or more heuristic values together in some fashion (e.g. adding, multiplying, etc.)
 
-    def __init__(self, children: List[Heuristic]):
-        super().__init__()
+    def __init__(self, children: List[Heuristic], should_update: bool=True):
+        super().__init__(should_update=should_update)
         self.children = children
 
     def attach(self, buffer):
@@ -44,7 +55,7 @@ class CompoundHeuristic(Heuristic):
         for child in self.children:  # propagate attach operation to children
             child.attach(buffer)
 
-    def calculate(self, context: SharedStepContext, **kwargs):
+    def _calculate(self, context: SharedStepContext, **kwargs):
         for heuristic in self.children:
             heuristic.calculate(context)
         self._combine()
@@ -62,8 +73,8 @@ class ModifierHeuristic(CompoundHeuristic):
 
     # Specific case of CompoundHeuristic where there should only ever be a single child heuristic
 
-    def __init__(self, child: Heuristic):
-        super().__init__([child])
+    def __init__(self, child: Heuristic, should_update: bool=True):
+        super().__init__([child], should_update=should_update)
         self.child = child
 
     def copy(self, *args, **kwargs):

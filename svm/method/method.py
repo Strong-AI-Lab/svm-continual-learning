@@ -1,7 +1,7 @@
 
 from argparse import Namespace
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Type, Optional, Union, Callable
+from typing import Dict, Any, List, Tuple, Type, Optional, Union, Callable
 
 import gym
 import pandas as pd
@@ -37,8 +37,8 @@ class GenericMethod(Method, target_setting=IncrementalSLSetting):
         # Learning rate of the optimizer.
         learning_rate: float = 0.001
 
-    def __init__(self, model: ClassificationModel, description: str = "Generic method", n_epochs: int = 1, hparams: HParams = None):
-        self.hparams: GenericMethod.HParams = hparams or self.HParams()
+    def __init__(self, model: ClassificationModel, description: str = "Generic method", n_epochs: int = 1, hparams: Dict[str, Any]={}):
+        self.hparams: Dict[str, Any] = hparams  # hyper-parameters of the method
         self.n_epochs: int = n_epochs
         self.early_stop_patience: int = 2
 
@@ -54,7 +54,7 @@ class GenericMethod(Method, target_setting=IncrementalSLSetting):
 
         self.model.to(setting.config.device)
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=self.hparams.learning_rate,
+            self.model.parameters(), lr=self.hparams['learning_rate'] if 'learning_rate' in self.hparams else 0.001,
         )
 
     def fit(self, train_env: PassiveEnvironment, valid_env: PassiveEnvironment):
@@ -108,3 +108,6 @@ class GenericMethod(Method, target_setting=IncrementalSLSetting):
         # Get the predicted classes
         y_pred = logits.argmax(dim=-1)
         return self.target_setting.Actions(y_pred)
+
+    def on_task_switch(self, task_id):
+        pass

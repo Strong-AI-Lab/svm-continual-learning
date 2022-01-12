@@ -12,15 +12,19 @@ class SVMBoundaryHeuristic(Heuristic):
 
     # Heuristic that uses the proximity to the SVM decision boundaries
 
-    def calculate(self, context: SharedStepContext, **kwargs):
+    def __init__(self, offset: float = 0.0, should_update: bool = True):
+        super().__init__(should_update=should_update)
+        self.offset = offset  # defines an offset w.r.t the positive decision boundary, to be used as the 'boundary' to calculate proximity to
+
+    def _calculate(self, context: SharedStepContext, **kwargs):
         i = context.ex_i
-        self.val = abs(1 - context.y_pred[i][context.y_targets[i]].cpu().item())
+        self.val = abs((1 + self.offset) - context.y_pred[i][context.y_targets[i]].cpu().item())
 
 class ClassRepresentationHeuristic(Heuristic):
 
     # Heuristic that gives examples weightings according to how under-represented they are in the replay buffer
 
-    def calculate(self, context: SharedStepContext, **kwargs):
+    def _calculate(self, context: SharedStepContext, **kwargs):
 
         try:
             class_tracker = self.buffer.get_tracker(ClassDistributionTracker)
