@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Collection, Dict, List, Tuple, Type, Optional, Union, Callable, TypeVar, TYPE_CHECKING
 
 from ..heuristic.base import Heuristic
-from ..context import SharedStepContext
+from ..context import ModelPredictionContext
 
 import numpy as np
 import torch
@@ -33,7 +33,7 @@ class ClassDistributionTracker(AbstractReplayTracker):
 
         self.class_counts[y] += dir
 
-    def post_add_examples(self, examples: List[ReplayExample], context: SharedStepContext):
+    def post_add_examples(self, examples: List[ReplayExample], context: ModelPredictionContext):
         # only called once per timestep
         for example in examples:
             self._process_example(example, 1)

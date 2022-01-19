@@ -4,7 +4,7 @@ from abc import abstractmethod
 from typing import Any, Collection, Dict, List, Tuple, Type, Optional, Union, Callable, TypeVar, TYPE_CHECKING
 
 from ..heuristic.base import Heuristic
-from ..context import SharedStepContext
+from ..context import ModelPredictionContext
 
 import numpy as np
 import torch
@@ -26,12 +26,12 @@ class AbstractReplayTracker():
         self.buffer = buffer
 
     @abstractmethod
-    def post_add_examples(self, examples: List[ReplayExample], context: SharedStepContext):
+    def post_add_examples(self, examples: List[ReplayExample], context: ModelPredictionContext):
         # Hook that is called by the replay buffer class after examples have been added to the buffer
         pass
 
     @abstractmethod
-    def post_get_examples(self, examples: List[ReplayExample], context: SharedStepContext):
+    def post_get_examples(self, examples: List[ReplayExample], context: ModelPredictionContext):
         # Hook that is called by the replay buffer class after examples have been retrieved from the buffer
         pass
 

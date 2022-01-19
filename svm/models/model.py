@@ -16,7 +16,7 @@ from sequoia.settings.sl.incremental.objects import (
     Rewards,
 )
 
-from svm.replay.context import SharedStepContext
+from svm.replay.context import ModelPredictionContext
 from svm.replay.buffer.base import AbstractReplayBuffer    
 
 class ClassificationModel(nn.Module):
@@ -31,6 +31,7 @@ class ClassificationModel(nn.Module):
 
         self.module_list = modules  # Stores the modules of this model in a list-like format
         self.replay_buffer = replay_buffer
+        self.replay_buffer.attach(self)
         self.device = device
 
     def forward(self, x: Union[Tensor, Observations]) -> Tensor:
@@ -44,24 +45,22 @@ class ClassificationModel(nn.Module):
         return x
 
     def shared_step(
-        self, batch: Tuple[Observations, Optional[Rewards]], environment: Environment
-    ) -> Tuple[Tensor, Dict]:
+        self, batch: Tuple[torch.Tensor, torch.Tensor], environment: Environment, use_replay: bool = True
+    ) -> Tuple[Tensor, Tensor, Tensor, Dict]:
 
-        observations: Observations = batch[0]
-        rewards: Optional[Rewards] = batch[1]
+        x = batch[0]
+        y_targets = batch[1]
 
-        # get examples from replay
-        replay_examples = self.replay_buffer.get_examples(32)
+        # get examples from replay to supplement immediate observations if specified
+        if use_replay:
+            replay_examples = self.replay_buffer.get_examples(32)
 
-        x = observations.x
-        y_targets = rewards.y
+            if len(replay_examples) != 0:
+                replay_x = torch.stack(tuple(ex.x for ex in replay_examples), dim=0)
+                replay_y = torch.stack(tuple(ex.y for ex in replay_examples), dim=0)
 
-        if len(replay_examples) != 0:
-            replay_x = torch.stack(tuple(ex.x for ex in replay_examples), dim=0)
-            replay_y = torch.stack(tuple(ex.y for ex in replay_examples), dim=0)
-
-            x = torch.cat((x, replay_x.to(self.device)), dim=0)
-            y_targets = torch.cat((y_targets, replay_y.to(self.device)), dim=0).to(torch.int64)
+                x = torch.cat((x, replay_x.to(self.device)), dim=0)
+                y_targets = torch.cat((y_targets, replay_y.to(self.device)), dim=0).to(torch.int64)
 
         # Get the predictions:
         y_pred = self(x)
@@ -72,22 +71,22 @@ class ClassificationModel(nn.Module):
 
         loss, batch_losses = self.batch_loss_fn(y_targets, y_pred)
 
+        if use_replay:
+            splitting_i = None  # None defaults to no splitting as x[:None] becomes x[:]
+            if len(replay_examples) != 0:
+                splitting_i = len(x) - len(replay_examples)
 
-        splitting_i = None  # None defaults to no splitting as x[:None] becomes x[:]
-        if len(replay_examples) != 0:
-            splitting_i = len(x) - len(replay_examples)
+            # add new examples to replay buffer
+            # TODO: should we calculate separate combined loss for replay / new examples?
+            new_examples_context = ModelPredictionContext(-1, x[:splitting_i], y_targets[:splitting_i], y_pred[:splitting_i], batch_losses[:splitting_i], loss) 
+            self.replay_buffer.add_examples(new_examples_context)
 
-        # add new examples to replay buffer
-        # TODO: should we calculate separate combined loss for replay / new examples?
-        new_examples_context = SharedStepContext(-1, x[:splitting_i], y_targets[:splitting_i], y_pred[:splitting_i], batch_losses[:splitting_i], loss) 
-        self.replay_buffer.add_examples(new_examples_context)
+            if splitting_i is not None:
+                # update examples that were pulled from the replay buffer
+                replay_examples_context = ModelPredictionContext(-1, x[splitting_i:], y_targets[splitting_i:], y_pred[splitting_i:], batch_losses[splitting_i:], loss)
+                self.replay_buffer.update_examples(replay_examples, replay_examples_context)
 
-        if splitting_i is not None:
-            # update examples that were pulled from the replay buffer
-            replay_examples_context = SharedStepContext(-1, x[splitting_i:], y_targets[splitting_i:], y_pred[splitting_i:], batch_losses[splitting_i:], loss)
-            self.replay_buffer.update_examples(replay_examples, replay_examples_context)
-
-        return loss, metrics_dict
+        return y_pred, loss, batch_losses, metrics_dict
 
     @abstractmethod
     def batch_loss_fn(self, y_targets: Tensor, logits: Tensor) -> Tuple[Tensor, Tensor]:
@@ -96,6 +95,9 @@ class ClassificationModel(nn.Module):
         # the averaged value
         raise NotImplementedError
 
+    def on_task_switch(self, task_id: Optional[int]):
+        self.replay_buffer.on_task_switch(task_id)
+
 class SoftmaxClassificationModel(ClassificationModel):       
 
     def batch_loss_fn(self, y_targets: Tensor, logits: Tensor) -> Tuple[Tensor, Tensor]:
@@ -103,7 +105,6 @@ class SoftmaxClassificationModel(ClassificationModel):
         loss = torch.mean(batch_losses)
 
         return loss, batch_losses
-
 
 class SVMClassificationModel(ClassificationModel):
 

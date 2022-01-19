@@ -3,14 +3,14 @@ from abc import abstractmethod
 from typing import List
 import numpy as np
 
-from ..context import SharedStepContext
+from ..context import ModelPredictionContext
 from .base import Heuristic, CompoundHeuristic, ModifierHeuristic
 
 class LossHeuristic(Heuristic):
 
     # Heuristic that simply reflects the value of the loss function for a given example
 
-    def _calculate(self, context: SharedStepContext, **kwargs):
+    def _calculate(self, context: ModelPredictionContext, **kwargs):
         self.val = torch.mean(context.batch_losses[context.ex_i]).cpu().item()
 
 class ProductHeuristic(CompoundHeuristic):

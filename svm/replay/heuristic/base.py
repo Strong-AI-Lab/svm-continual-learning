@@ -5,7 +5,7 @@ import numpy as np
 
 from ..buffer.base import AbstractReplayBuffer
 
-from ..context import SharedStepContext
+from ..context import ModelPredictionContext
 
 class Heuristic():
 
@@ -23,7 +23,7 @@ class Heuristic():
         self.buffer = buffer
 
     @abstractmethod
-    def calculate(self, context: SharedStepContext, **kwargs):
+    def calculate(self, context: ModelPredictionContext, **kwargs):
         if not self.should_update and self.has_calculated:  # skip updating / calculating if specified
             return
         
@@ -31,7 +31,7 @@ class Heuristic():
         self.has_calculated = True
 
     @abstractmethod
-    def _calculate(self, context: SharedStepContext, **kwargs) -> float:
+    def _calculate(self, context: ModelPredictionContext, **kwargs) -> float:
         # Calculates and updates the heuristic for the associated replay example
         return 0
 
@@ -55,7 +55,7 @@ class CompoundHeuristic(Heuristic):
         for child in self.children:  # propagate attach operation to children
             child.attach(buffer)
 
-    def _calculate(self, context: SharedStepContext, **kwargs):
+    def _calculate(self, context: ModelPredictionContext, **kwargs):
         for heuristic in self.children:
             heuristic.calculate(context)
         self._combine()

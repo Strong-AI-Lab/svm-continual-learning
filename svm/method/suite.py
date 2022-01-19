@@ -3,7 +3,7 @@ from typing import Dict, Any, List, Tuple, Type, Optional, Union, Callable
 import itertools
 
 from sequoia.common.config.config import Config
-from sequoia.settings.base.results import Results
+from sequoia.settings.sl.continual.results import ContinualSLResults
 from sequoia.settings.sl.continual.setting import ContinualSLSetting
 
 from svm.method.method import GenericMethod
@@ -20,7 +20,7 @@ class BasicMethodTestingSuite():
         # stores the results of each method's execution
         # stored in same order as self.methods (i.e. first method results will be at front of list)
         # each method has a list of results, as there could be more than one run (depending on value of n_runs)
-        self.results: List[List[Results]] = []
+        self.results: List[List[ContinualSLResults]] = []
 
         # a callback function that returns the list of methods to test
         # (hacky solution to allowing multiple repeats of a methods execution, TODO: add reset function to method / model classes to make this cleaner)
@@ -42,37 +42,32 @@ class BasicMethodTestingSuite():
         for method in methods:
             self.results.append([self.setting.apply(method, self.config)])
 
-        all_methods = list(zip(methods))  # keep track of the separate instances for each method (zip with nothing to turn into list of tuples)
+        all_methods = [[method] for method in methods]
         for _ in range(1, self.n_runs):
             methods = self.method_init_fn()
             for method_i, method in enumerate(methods):
                 self.results[method_i].append(self.setting.apply(method, self.config))
-            all_methods = list(zip(all_methods, methods))
-                                                                          
+            all_methods = [all_methods[i]+[methods[i]] for i in range(len(methods))]                                          
 
         # create return objects for each method, detailing evaluation stats among other things
         ret_objs: List[Dict] = []
         for method_i, results_arr in enumerate(self.results):
-            accuracy_matrix = np.zeros((self.n_runs, self.setting.nb_tasks+1)) # store accuracy values for each task in matrix for easy mean / std dev calcs.
-                                                                             # (+1 for task count to account for average task accuracy metric - see below *)
+            obj_matrices = np.zeros((self.n_runs, self.setting.nb_tasks, self.setting.nb_tasks))
+            
             for repeat_i, results in enumerate(results_arr):
-                for task_i, task_metric in enumerate(results.final_performance_metrics):
-                    accuracy_matrix[repeat_i][task_i] = task_metric.accuracy
-                # * calculate and store average accuracy
-                accuracy_matrix[repeat_i][-1] = np.mean(accuracy_matrix[repeat_i, :-1])
+                # objective_matrix stores a matrix describing the performance on each task after each time step
+                #  - rows correspond to time step, columns to task performance at that time step
+                obj_matrices[repeat_i] = np.array(results.objective_matrix)
 
-            # calculate mean / std dev for method's accuracy in each task
-            means = np.mean(accuracy_matrix, axis=0)    # calculate mean over n_repeats axis
-            std_devs = np.std(accuracy_matrix, axis=0)  # likewise with std devs
+            # calculate mean / std dev fof objective at each time step, for each task
+            mean_obj_matrix = np.mean(obj_matrices, axis=0)   # calculate mean over n_repeats axis
+            obj_std_matrix = np.std(obj_matrices, axis=0)  # likewise with std devs
 
             ret_objs.append({
                 'raw_results': results_arr,
                 'method_instances': all_methods[method_i],
-                'accuracy_matrix': accuracy_matrix,
-                'task_mean_acc': means[:-1],
-                'mean_acc': means[-1],
-                'task_acc_std': std_devs[:-1],
-                'acc_std': std_devs[-1]
+                'mean_obj_matrix': mean_obj_matrix,
+                'obj_std_matrix': obj_std_matrix,
             })
         
         return ret_objs

@@ -1,6 +1,6 @@
 import torch
 
-class SharedStepContext():
+class ModelPredictionContext():
 
     # Wrapper class for data that is relevant to a given shared_step execution
     #  - Primarily used for replay purposes to enable easier passing of information related to

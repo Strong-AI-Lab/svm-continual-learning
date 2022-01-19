@@ -6,7 +6,7 @@ from random import sample
 from copy import deepcopy
 from collections import defaultdict
 
-from ..context import SharedStepContext
+from ..context import ModelPredictionContext
 
 import numpy as np
 import torch
@@ -14,6 +14,7 @@ import torch
 if TYPE_CHECKING:
     from ..heuristic.base import Heuristic
     from ..tracker.base import AbstractReplayTracker
+    from svm.models.model import ClassificationModel
 
 class ReplayExample():
     def __init__(self, x, y, heuristic: Heuristic, buffer):
@@ -24,7 +25,7 @@ class ReplayExample():
                                                     # (can't type argument due to AbstractReplayBuffer having not been defined yet)
         self.heuristic = heuristic   # heursitic object defining the heuristic for this replay example
 
-    def update_heuristic(self, context: SharedStepContext, **kwargs):
+    def update_heuristic(self, context: ModelPredictionContext, **kwargs):
         self.heuristic.calculate(context)  # TODO: pass on kwargs
 
 T = TypeVar('T', bound='AbstractReplayTracker')
@@ -32,6 +33,9 @@ T = TypeVar('T', bound='AbstractReplayTracker')
 class AbstractReplayBuffer():
 
     def __init__(self, heuristic_template: Heuristic, trackers: List[AbstractReplayTracker] = []):
+
+        # store the model that this buffer is attached to
+        self.model: ClassificationModel = None
 
         # heuristics_template is effectively just an instantiated instance of the heuristic type to be used
         # for the replay examples in this bufffer. it is simply used to create copies of it for newly created examples
@@ -44,6 +48,10 @@ class AbstractReplayBuffer():
         self.trackers: Dict[Type[AbstractReplayTracker], AbstractReplayTracker] = {}
         for tracker in trackers:
             self.add_tracker(tracker)
+
+    def attach(self, model: ClassificationModel):
+        # 'attaches' this replay buffer to the passed model (has no function other than storing its reference, at least for most buffer types)
+        self.model = model
 
     def get_tracker(self, tracker_id: Type[T]) -> T:
         return self.trackers[tracker_id]
@@ -75,7 +83,7 @@ class AbstractReplayBuffer():
         for tracker in self.trackers.values():
             tracker.post_clean_buffer(removed_examples)
     
-    def add_examples(self, context: SharedStepContext):
+    def add_examples(self, context: ModelPredictionContext):
 
         # 'context' should only contain data relating to the datapoints which are to be added to replay memory
         
@@ -95,7 +103,7 @@ class AbstractReplayBuffer():
         for tracker in self.trackers.values():
             tracker.post_add_examples(new_examples, context)
 
-    def update_examples(self, examples: List[ReplayExample], replay_context: SharedStepContext):
+    def update_examples(self, examples: List[ReplayExample], replay_context: ModelPredictionContext):
         # Updates the passed ReplayExample instances heuristics
         #  - Assumes that examples and replay_context are ordered in the same fashion (i.e. examples[i] corresponds to replay_context.x[i], e.g.)
         for i, example in enumerate(examples):
@@ -105,3 +113,8 @@ class AbstractReplayBuffer():
     @abstractmethod
     def get_examples(self, num_examples: int, random: bool = True):
         raise NotImplementedError
+
+    def on_task_switch(self, task_id: Optional[int]):
+        # can optionally be implemented to do additional decision making / logic when a task boundary is reached
+        # (may never be called depending upon CL setting as well as environment configuration)
+        pass

@@ -7,7 +7,7 @@ from copy import deepcopy
 from collections import defaultdict
 
 from svm.replay.heuristic.base import Heuristic
-from ..context import SharedStepContext
+from ..context import ModelPredictionContext
 from .base import AbstractReplayBuffer, ReplayExample
 
 import numpy as np
@@ -59,7 +59,7 @@ class HeuristicSortedReplayBuffer(AbstractReplayBuffer):
         self.buffer.sort(key = lambda ex: ex.heuristic.val, reverse = self.reverse_sort)
         
         if len(self.buffer) > self.max_buffer_size:
-            examples_to_remove = self.buffer[:len(self.buffer) - self.max_buffer_size]
+            examples_to_remove = self.buffer[:-self.max_buffer_size]
             self.buffer = self.buffer[-self.max_buffer_size:]  # remove examples with smallest / largest heursitic (depending on if sort is reversed)
             self._post_clean_buffer(examples_to_remove)
 
@@ -83,6 +83,9 @@ class ClassSeparatedHeuristicReplayBuffer(AbstractReplayBuffer):
         if num_examples > buffer_size:
             return []
 
+        #TODO: dont sample from current task
+        #TODO: add performance metric tracking over time
+
         class_ids = list(self.buffer.keys())
         sample_class_ids = np.random.choice(class_ids, num_examples)
 
@@ -103,10 +106,52 @@ class ClassSeparatedHeuristicReplayBuffer(AbstractReplayBuffer):
             class_buffer.sort(key = lambda ex: ex.heuristic.val, reverse = self.reverse_sort)
 
             if len(class_buffer) > self.class_buffer_size:
-                examples_to_remove = class_buffer[:len(class_buffer) - self.class_buffer_size]
+                examples_to_remove = class_buffer[:-self.class_buffer_size]
                 self.buffer[class_id] = class_buffer[-self.class_buffer_size:]  # remove examples with smallest / largest heursitic (depending on if sort is reversed)
                 self._post_clean_buffer(examples_to_remove)
         
-            
+class DelayedClassSeparatedHeuristicReplayBuffer(ClassSeparatedHeuristicReplayBuffer):
 
+    # Same as ClassSeparatedHeuristicReplayBuffer, except prioritised discarding is delayed until all examples have been seen for a particular class.
+    # Can be useful where we want the most accurate classifier possible for a given class before deciding which examples to keep.
+    # NOTE: This buffer assumes a CL scenario where a class can only appear in a single task, so can only be used with Class/Task/Domain incremental settings.
 
+    def __init__(self, heuristic_template: Heuristic, trackers: List[AbstractReplayTracker] = [], class_buffer_size=100, reverse_sort: bool = False, update_batch_size: int = 32):
+        super().__init__(heuristic_template, trackers, class_buffer_size=class_buffer_size, reverse_sort=reverse_sort)
+
+        self.curr_classes = []  # stores the class ids present in the current task (resets after each task boundary)
+        self.update_batch_size = update_batch_size  # the size of the batches used for re-calculating outputs for task examples at end of each task
+
+    def _add_examples(self, examples: List[ReplayExample]):
+        for example in examples:
+            class_id = example.y.cpu().item()
+            if class_id not in self.curr_classes:  # update classes for current task if necessary
+                self.curr_classes.append(class_id)
+
+            self.buffer[class_id].append(example)
+
+    def on_task_switch(self, task_id: Optional[int]):
+        for class_id in self.curr_classes:
+            class_buffer = self.buffer[class_id]
+
+            for i in range(0, len(class_buffer), self.update_batch_size):
+                examples = class_buffer[i:i+self.update_batch_size]
+                
+                x = torch.stack(tuple(ex.x for ex in examples), dim=0)
+                y = torch.stack(tuple(ex.y for ex in examples), dim=0)
+
+                y_pred, loss, batch_losses, _ = self.model.shared_step((x, y), None, use_replay=False)  #TODO: hacky solution with setting environment to None, but its currently not used soo....
+
+                context = ModelPredictionContext(-1, x, y, y_pred, batch_losses, loss)
+                for i_, ex in enumerate(examples):  # update example heuristics using created context
+                    context.ex_i = i_
+                    ex.update_heuristic(context)
+
+            class_buffer.sort(key = lambda ex: ex.heuristic.val, reverse = self.reverse_sort)
+
+            if len(class_buffer) > self.class_buffer_size:
+                examples_to_remove = class_buffer[:-self.class_buffer_size]
+                self.buffer[class_id] = class_buffer[-self.class_buffer_size:]  # remove examples with smallest / largest heursitic (depending on if sort is reversed)
+                self._post_clean_buffer(examples_to_remove)
+
+        self.curr_classes = []  # reset curr_classes
